@@ -75,6 +75,10 @@ public class ExtractCommand implements Callable<Integer> {
             description = "Navigation/wait timeout in milliseconds (default: ${DEFAULT-VALUE}).")
     private double timeoutMs;
 
+    @Option(names = {"--delay"}, paramLabel = "MS",
+            description = "Delay in milliseconds after page load before extracting.")
+    private long delayMs = 0;
+
     @Override
     public Integer call() throws Exception {
         if (session != null && !Files.isRegularFile(session)) {
@@ -106,6 +110,9 @@ public class ExtractCommand implements Callable<Integer> {
                 page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.LOAD));
                 if (waitFor != null && !waitFor.isBlank()) {
                     page.waitForSelector(waitFor);
+                }
+                if (delayMs > 0) {
+                    page.waitForTimeout(delayMs);
                 }
 
                 result.put("url", page.url());

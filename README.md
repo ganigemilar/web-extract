@@ -69,6 +69,7 @@ If every query returns zero matches while a session is used, the tool warns that
 | `--browser` | `chromium` (default), `firefox`, `webkit` |
 | `--headed` | Show the browser window |
 | `--timeout MS` | Timeout in ms (default 30000) |
+| `--delay MS` | Delay in milliseconds after page load before extracting. |
 
 ## Examples
 
