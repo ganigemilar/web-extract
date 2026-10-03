@@ -10,8 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -41,7 +40,7 @@ public class TemplateCommand implements Callable<Integer> {
             return 2;
         }
 
-        Map<String, Object> template = switch (templateType.toLowerCase()) {
+        TestPlan template = switch (templateType.toLowerCase()) {
             case "google" -> createGoogleTemplate();
             case "login" -> createLoginTemplate();
             case "empty" -> createEmptyTemplate();
@@ -65,116 +64,120 @@ public class TemplateCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Map<String, Object> createGoogleTemplate() {
-        Map<String, Object> plan = new LinkedHashMap<>();
-        plan.put("name", "Google Search Test");
-        plan.put("url", "https://www.google.com");
-        plan.put("browser", "chromium");
-        plan.put("headed", false);
-        plan.put("timeout", 30000);
-        plan.put("delay", 0);
-        plan.put("output", "action-result.json");
+    private TestPlan createGoogleTemplate() {
+        TestPlan plan = new TestPlan();
+        plan.setName("Google Search Test");
+        plan.setUrl("https://www.google.com");
+        plan.setBrowser("chromium");
+        plan.setHeaded(false);
+        plan.setTimeout(30000);
+        plan.setDelay(0);
+        plan.setOutput(Path.of("action-result.json"));
 
-        Map<String, Object> step1 = new LinkedHashMap<>();
-        step1.put("step", "fill search query");
-        step1.put("action", "fill");
-        step1.put("selector", "textarea[name='q']");
-        step1.put("value", "test keyword");
-        step1.put("delay", 500);
+        TestStep step1 = new TestStep();
+        step1.setStepName("fill search query");
+        step1.setAction("fill");
+        step1.setSelector("textarea[name='q']");
+        step1.setValue("test keyword");
+        step1.setDelay(500);
 
-        Map<String, Object> step2 = new LinkedHashMap<>();
-        step2.put("step", "click search button");
-        step2.put("action", "click");
-        step2.put("selector", "input[name='btnK']");
-        step2.put("waitForNavigation", true);
-        step2.put("delay", 1000);
+        TestStep step2 = new TestStep();
+        step2.setStepName("click search button");
+        step2.setAction("click");
+        step2.setSelector("input[name='btnK']");
+        step2.setWaitForNavigation(true);
+        step2.setDelay(1000);
 
-        Map<String, Object> step3 = new LinkedHashMap<>();
-        step3.put("step", "wait for results");
-        step3.put("action", "wait");
-        step3.put("selector", "div#search");
-        step3.put("delay", 500);
+        TestStep step3 = new TestStep();
+        step3.setStepName("wait for results");
+        step3.setAction("wait");
+        step3.setSelector("div#search");
+        step3.setDelay(500);
 
-        Map<String, Object> step4 = new LinkedHashMap<>();
-        step4.put("step", "verify results loaded");
-        step4.put("action", "assert");
-        Map<String, Object> assertObj = new LinkedHashMap<>();
-        assertObj.put("urlContains", "search");
-        assertObj.put("selectorExists", "div#rso");
-        step4.put("assert", assertObj);
+        TestStep step4 = new TestStep();
+        step4.setStepName("verify results loaded");
+        step4.setAction("assert");
+        step4.setDelay(500);
 
-        plan.put("steps", Arrays.asList(step1, step2, step3, step4));
+        Assertion assertion = new Assertion();
+        assertion.setUrlContains("search");
+        assertion.setSelectorExists("div#rso");
+        step4.setAssertion(assertion);
+
+        plan.setSteps(List.of(step1, step2, step3, step4));
         return plan;
     }
 
-    private Map<String, Object> createLoginTemplate() {
-        Map<String, Object> plan = new LinkedHashMap<>();
-        plan.put("name", "Login Flow Test");
-        plan.put("url", "https://example.com/login");
-        plan.put("browser", "chromium");
-        plan.put("headed", false);
-        plan.put("timeout", 30000);
-        plan.put("delay", 0);
-        plan.put("output", "action-result.json");
-        plan.put("session", "session.json");
-        plan.put("updateSession", true);
+    private TestPlan createLoginTemplate() {
+        TestPlan plan = new TestPlan();
+        plan.setName("Login Flow Test");
+        plan.setUrl("https://example.com/login");
+        plan.setBrowser("chromium");
+        plan.setHeaded(false);
+        plan.setTimeout(30000);
+        plan.setDelay(0);
+        plan.setOutput(Path.of("action-result.json"));
+        plan.setSession(Path.of("session.json"));
+        plan.setUpdateSession(true);
 
-        Map<String, Object> step1 = new LinkedHashMap<>();
-        step1.put("step", "enter username");
-        step1.put("action", "fill");
-        step1.put("selector", "#username");
-        step1.put("value", "your-username");
-        step1.put("delay", 300);
+        TestStep step1 = new TestStep();
+        step1.setStepName("enter username");
+        step1.setAction("fill");
+        step1.setSelector("#username");
+        step1.setValue("your-username");
+        step1.setDelay(300);
 
-        Map<String, Object> step2 = new LinkedHashMap<>();
-        step2.put("step", "enter password");
-        step2.put("action", "fill");
-        step2.put("selector", "#password");
-        step2.put("value", "your-password");
-        step2.put("delay", 300);
+        TestStep step2 = new TestStep();
+        step2.setStepName("enter password");
+        step2.setAction("fill");
+        step2.setSelector("#password");
+        step2.setValue("your-password");
+        step2.setDelay(300);
 
-        Map<String, Object> step3 = new LinkedHashMap<>();
-        step3.put("step", "click login button");
-        step3.put("action", "click");
-        step3.put("selector", "button[type=submit]");
-        step3.put("waitForNavigation", true);
-        step3.put("delay", 2000);
+        TestStep step3 = new TestStep();
+        step3.setStepName("click login button");
+        step3.setAction("click");
+        step3.setSelector("button[type=submit]");
+        step3.setWaitForNavigation(true);
+        step3.setDelay(2000);
 
-        Map<String, Object> step4 = new LinkedHashMap<>();
-        step4.put("step", "wait for dashboard");
-        step4.put("action", "wait");
-        step4.put("selector", ".dashboard");
-        step4.put("delay", 1000);
+        TestStep step4 = new TestStep();
+        step4.setStepName("wait for dashboard");
+        step4.setAction("wait");
+        step4.setSelector(".dashboard");
+        step4.setDelay(1000);
 
-        Map<String, Object> step5 = new LinkedHashMap<>();
-        step5.put("step", "verify login success");
-        step5.put("action", "assert");
-        Map<String, Object> assertObj = new LinkedHashMap<>();
-        assertObj.put("selectorExists", ".user-menu");
-        step5.put("assert", assertObj);
+        TestStep step5 = new TestStep();
+        step5.setStepName("verify login success");
+        step5.setAction("assert");
+        step5.setDelay(500);
 
-        plan.put("steps", Arrays.asList(step1, step2, step3, step4, step5));
+        Assertion assertion = new Assertion();
+        assertion.setSelectorExists(".user-menu");
+        step5.setAssertion(assertion);
+
+        plan.setSteps(List.of(step1, step2, step3, step4, step5));
         return plan;
     }
 
-    private Map<String, Object> createEmptyTemplate() {
-        Map<String, Object> plan = new LinkedHashMap<>();
-        plan.put("name", "My Test Plan");
-        plan.put("url", "https://example.com");
-        plan.put("browser", "chromium");
-        plan.put("headed", false);
-        plan.put("timeout", 30000);
-        plan.put("delay", 0);
-        plan.put("output", "action-result.json");
-        plan.put("steps", Arrays.asList(
-            Map.of(
-                "step", "step name",
-                "action", "click",
-                "selector", "selector",
-                "waitForNavigation", true,
-                "delay", 500
-            )
-        ));
+    private TestPlan createEmptyTemplate() {
+        TestPlan plan = new TestPlan();
+        plan.setName("My Test Plan");
+        plan.setUrl("https://example.com");
+        plan.setBrowser("chromium");
+        plan.setHeaded(false);
+        plan.setTimeout(30000);
+        plan.setDelay(0);
+        plan.setOutput(Path.of("action-result.json"));
+
+        TestStep step = new TestStep();
+        step.setStepName("step name");
+        step.setAction("click");
+        step.setSelector("selector");
+        step.setWaitForNavigation(true);
+        step.setDelay(500);
+
+        plan.setSteps(List.of(step));
         return plan;
     }
 }
