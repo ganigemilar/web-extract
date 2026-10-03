@@ -244,6 +244,56 @@ The command outputs a JSON file with the following structure:
 - On Linux and macOS the session file is created with owner-only permissions.
 - Steps execute sequentially in the same browser context. Page navigations (clicks that redirect, explicit navigates) are automatically handled - subsequent steps run on the new page.
 
+### Template Command
+
+Generate a JSON test plan template file to get started quickly.
+
+```bash
+web-workflow template [TEMPLATE] [options]
+```
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `TEMPLATE` | Template type: `google`, `login`, `empty` (default: `google`) |
+| `-o, --output <FILE>` | Output JSON file (default: `test-plan.json`) |
+| `-f, --force` | Overwrite existing file without prompting |
+
+#### Templates
+
+| Template | Description |
+|----------|-------------|
+| `google` | Google search flow: fill query, click search, wait for results, verify |
+| `login` | Login flow: fill username/password, click submit, wait for dashboard, verify |
+| `empty` | Minimal template with one click step |
+
+#### Examples
+
+**Generate Google search template:**
+
+```bash
+web-workflow template google -o my-search-test.json
+```
+
+**Generate login flow template:**
+
+```bash
+web-workflow template login -o login-test.json
+```
+
+**Generate empty template:**
+
+```bash
+web-workflow template empty -o custom-test.json
+```
+
+**Overwrite existing file:**
+
+```bash
+web-workflow template google -o test-plan.json --force
+```
+
 ## Related Modules
 
 This module is designed to work alongside the `web-extractor` module, which provides login and data extraction capabilities.

@@ -1,7 +1,13 @@
 # web-extract
 
-A Java CLI that opens websites with Playwright, runs queries against the page, and saves the results as JSON. Sites that
-require a login are supported through a saved session.
+A multi-module Java CLI project for web automation and data extraction using Playwright.
+
+## Modules
+
+| Module | Description | Artifact |
+|--------|-------------|----------|
+| **web-extractor** | Extract data from web pages using CSS/XPath/text/role queries. Supports login sessions for authenticated sites. | `web-extractor-1.0.0.jar` |
+| **web-workflow** | Execute browser automation test plans defined in JSON. Supports click, fill, navigate, wait, assertions, and more. | `web-workflow-1.0.0-shaded.jar` |
 
 ## Requirements
 
@@ -9,115 +15,90 @@ require a login are supported through a saved session.
 - Maven 3.8+
 - Internet access on first run (Playwright downloads the browser automatically)
 
-## Build
+## Build All Modules
 
 ```bash
 mvn clean package
-alias web-extract='java -jar target/web-extract-1.0.0.jar'
 ```
 
-## Workflow for sites that need login
+This builds both modules:
+- `web-extractor/target/web-extractor-1.0.0.jar`
+- `web-workflow/target/web-workflow-1.0.0-shaded.jar`
 
-1. **Create the session once** with `login`. It saves cookies and local storage to a file.
-2. **Reuse it** with `extract --session`.
+## Quick Start
 
-### Step 1: login
-
-Manual mode (best for 2FA, CAPTCHA, SSO). A browser window opens, you log in, then press Enter in the terminal:
+### web-extractor — Data Extraction
 
 ```bash
+# Build
+cd web-extractor && mvn clean package
+
+# Create alias
+alias web-extract='java -jar target/web-extractor-1.0.0.jar'
+
+# Login (manual mode - handles 2FA/CAPTCHA)
 web-extract login https://example.com/login -s session.json
+
+# Extract data
+web-extract extract https://example.com/account -s session.json -q "h1" -q ".order-row" -o account.json
 ```
 
-Automatic mode (simple username/password forms). Credentials come from environment variables, or are prompted. They are
-never passed as command-line arguments, so they stay out of shell history:
+See [web-extractor/README.md](web-extractor/README.md) for full documentation.
+
+### web-workflow — Browser Automation Test Plans
 
 ```bash
-export WEB_EXTRACT_USER="me@example.com"
-export WEB_EXTRACT_PASS="secret"
+# Build
+cd web-workflow && mvn clean package
 
-web-extract login https://example.com/login -s session.json \
-  --user-selector "#email" \
-  --pass-selector "#password" \
-  --submit-selector "button[type=submit]" \
-  --success-url "**/dashboard"
+# Create alias
+alias web-workflow='java -jar target/web-workflow-1.0.0-shaded.jar'
+
+# Generate a template
+web-workflow template google -o my-test.json
+
+# Run the test plan
+web-workflow action -i my-test.json
 ```
 
-`--success-url` or `--success-selector` tells the tool how to know the login worked. Without either, it waits for the
-network to go idle.
+See [web-workflow/README.md](web-workflow/README.md) for full documentation.
 
-### Step 2: extract
+## Typical Workflow
 
-```bash
-web-extract extract https://example.com/account -s session.json \
-  -q "h1" -q ".order-row" -o account.json
-```
-
-Add `--update-session` to write the refreshed session back to the file after the run (useful when the site rotates
-tokens).
-
-If every query returns zero matches while a session is used, the tool warns that the session may have expired. Run
-`login` again.
-
-## Extract options
-
-| Option                | Description                                                                          |
-|-----------------------|--------------------------------------------------------------------------------------|
-| `-q, --query`         | Query to run (repeatable, required). CSS by default; also `xpath=`, `text=`, `role=` |
-| `-a, --attr`          | Attribute to extract from each match, e.g. `href` (repeatable)                       |
-| `-s, --session`       | Session file created by `login`                                                      |
-| `--update-session`    | Save the session back after extracting                                               |
-| `-o, --output`        | Output JSON file (default `output.json`)                                             |
-| `--html`              | Include inner HTML of each match                                                     |
-| `--limit N`           | Max matches per query (0 = all)                                                      |
-| `--wait-for SELECTOR` | Wait for a selector before extracting (JS-heavy pages)                               |
-| `--browser`           | `chromium` (default), `firefox`, `webkit`                                            |
-| `--headed`            | Show the browser window                                                              |
-| `--timeout MS`        | Timeout in ms (default 30000)                                                        |
-| `--delay MS`          | Delay in milliseconds after page load before extracting.                             |
-
-## Examples
-
-```bash
-# Public page, no session
-web-extract extract https://example.com -q h1 -q p -o example.json
-
-# All links with their href
-web-extract extract https://example.com -q a -a href
-
-# XPath, with HTML included
-web-extract extract https://example.com -q "xpath=//h1" --html
-```
-
-## Output format
-
-```json
-{
-  "url": "https://example.com/account",
-  "title": "My account",
-  "extractedAt": "2026-10-02T03:00:00Z",
-  "sessionUsed": true,
-  "results": [
-    {
-      "query": ".order-row",
-      "count": 2,
-      "matches": [
-        {
-          "text": "Order #1001"
-        },
-        {
-          "text": "Order #1002"
-        }
-      ]
-    }
-  ]
-}
-```
-
-If a query is invalid, that entry gets an `"error"` field and the remaining queries still run.
+1. **Login once** with `web-extractor` to create a session file (cookies + local storage)
+2. **Reuse session** in either module:
+   - `web-extract extract --session session.json` for data extraction
+   - `web-workflow action -i plan.json --session session.json` for test automation
+3. **Update session** with `--update-session` to keep rotating tokens fresh
 
 ## Security
 
-The session file holds live login cookies, so anyone with it can act as you on that site. Keep it out of version
-control (a `.gitignore` is included) and delete it when you no longer need it. On Linux and macOS the file is created
-with owner-only permissions.
+Session files contain live login cookies — treat them like passwords:
+- Keep out of version control (`.gitignore` recommended)
+- Delete when no longer needed
+- On Linux/macOS, files are created with owner-only permissions (`rw-------`)
+
+## Module Details
+
+### web-extractor
+- **Commands**: `login`, `extract`
+- **Queries**: CSS (default), `xpath=`, `text=`, `role=`
+- **Output**: JSON with text, attributes, optional HTML
+- **Session**: Manual (interactive) or automatic (env vars) login modes
+
+### web-workflow
+- **Commands**: `action`, `template`
+- **Actions**: click, fill, type, press, hover, select, check, wait, navigate, reload, goback, goforward, screenshot, assert
+- **Assertions**: urlContains, urlEquals, titleContains, titleEquals, selectorExists, selectorNotExists, selectorText, selectorValue, selectorCount, jsExpression
+- **Templates**: google (search), login (auth flow), empty (minimal)
+- **Debug**: `--headed`, `--stay-open`
+
+## Extending
+
+Both modules use the same core technologies:
+- **Playwright** for browser automation
+- **Picocli** for CLI
+- **Jackson** for JSON
+- **Maven Shade Plugin** for executable JARs
+
+Add new functionality by creating new `@Command` classes and registering them in each module's `Main.java`.
