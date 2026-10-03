@@ -8,7 +8,7 @@ import picocli.CommandLine.Command;
     mixinStandardHelpOptions = true,
     version = "web-workflow 1.0.0",
     description = "Perform actions on websites using Playwright.",
-    subcommands = {ActionCommand.class})
+    subcommands = {ActionCommand.class, TemplateCommand.class})
 public class Main implements Runnable {
 
   @Override
