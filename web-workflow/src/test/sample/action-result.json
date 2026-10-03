@@ -1,0 +1,28 @@
+{
+  "success" : true,
+  "name" : null,
+  "url" : "https://www.iana.org/help/example-domains",
+  "title" : "Example Domains",
+  "extractedAt" : "2026-10-03T13:37:48.617990800Z",
+  "sessionUsed" : false,
+  "steps" : [ {
+    "step" : null,
+    "action" : "click",
+    "selector" : "a",
+    "value" : null,
+    "success" : true,
+    "matches" : 1,
+    "error" : null,
+    "durationMs" : 2352,
+    "navigated" : true,
+    "newUrl" : "https://www.iana.org/help/example-domains",
+    "assertions" : null,
+    "options" : null
+  } ],
+  "summary" : {
+    "failed" : 0,
+    "totalDurationMs" : 2352,
+    "passed" : 1,
+    "totalSteps" : 1
+  }
+}

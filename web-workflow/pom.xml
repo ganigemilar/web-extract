@@ -16,7 +16,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <main.class>com.example.webworkflow.Main</main.class>
+    <main.class>com.webworkflow.Main</main.class>
   </properties>
 
   <build>

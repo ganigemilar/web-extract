@@ -1,0 +1,18 @@
+{
+  "name": "Google Search Test",
+  "url": "https://www.google.com",
+  "steps": [
+    {
+      "step": "fill search query",
+      "action": "fill",
+      "selector": "textarea[name='q']",
+      "value": "test"
+    },
+    {
+      "step": "click search button",
+      "action": "click",
+      "selector": "input[name='btnK']",
+      "waitForNavigation": true
+    }
+  ]
+}
