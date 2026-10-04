@@ -8,22 +8,15 @@
     <artifactId>web-extract</artifactId>
     <version>1.0.0</version>
   </parent>
-
-  <groupId>com.webworkflow</groupId>
-  <artifactId>web-workflow</artifactId>
-
-  <properties>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <main.class>com.webworkflow.Main</main.class>
-  </properties>
+  <groupId>com.webcommon</groupId>
+  <artifactId>web-common</artifactId>
 
   <dependencies>
     <dependency>
-      <groupId>com.webcommon</groupId>
-      <artifactId>web-common</artifactId>
-      <version>1.0.0</version>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>1.18.34</version>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 </project>

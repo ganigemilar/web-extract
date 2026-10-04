@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
-import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.options.WaitUntilState;
+import com.webcommon.BrowserSupport;
+import com.webcommon.extraction.ExtractionOptions;
+import com.webcommon.extraction.ExtractionResult;
+import com.webcommon.extraction.Extractor;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
@@ -120,9 +123,23 @@ public class ExtractCommand implements Callable<Integer> {
         result.put("extractedAt", Instant.now().toString());
         result.put("sessionUsed", session != null);
 
+        // Create global extraction options from CLI flags
+        ExtractionOptions options = new ExtractionOptions(attrs, includeHtml, limit);
+
+        // Use shared extractor
+        List<ExtractionResult> extractionResults = Extractor.extract(page, queries, options);
+
+        // Convert to JSON-compatible format
         List<Map<String, Object>> queryResults = new ArrayList<>();
-        for (String query : queries) {
-          queryResults.add(runQuery(page, query));
+        for (ExtractionResult er : extractionResults) {
+          Map<String, Object> entry = new LinkedHashMap<>();
+          entry.put("query", er.getQuery());
+          entry.put("count", er.getCount());
+          entry.put("matches", er.getMatches());
+          if (er.hasError()) {
+            entry.put("error", er.getError());
+          }
+          queryResults.add(entry);
         }
         result.put("results", queryResults);
 
@@ -153,44 +170,5 @@ public class ExtractCommand implements Callable<Integer> {
 
     System.err.println("Saved results to " + output.toAbsolutePath());
     return 0;
-  }
-
-  private Map<String, Object> runQuery(Page page, String query) {
-    Map<String, Object> entry = new LinkedHashMap<>();
-    entry.put("query", query);
-
-    try {
-      Locator locator = page.locator(query);
-      int total = locator.count();
-      int take = limit > 0 ? Math.min(total, limit) : total;
-
-      List<Map<String, Object>> matches = new ArrayList<>();
-      for (int i = 0; i < take; i++) {
-        Locator el = locator.nth(i);
-        Map<String, Object> match = new LinkedHashMap<>();
-        match.put("text", el.innerText().trim());
-
-        if (!attrs.isEmpty()) {
-          Map<String, String> attrValues = new LinkedHashMap<>();
-          for (String attr : attrs) {
-            attrValues.put(attr, el.getAttribute(attr));
-          }
-          match.put("attributes", attrValues);
-        }
-        if (includeHtml) {
-          match.put("html", el.innerHTML());
-        }
-        matches.add(match);
-      }
-
-      entry.put("count", total);
-      entry.put("matches", matches);
-    } catch (PlaywrightException e) {
-      // Bad selector or element detached: record the error and keep going with other queries.
-      entry.put("count", 0);
-      entry.put("matches", List.of());
-      entry.put("error", BrowserSupport.firstLine(e.getMessage()));
-    }
-    return entry;
   }
 }

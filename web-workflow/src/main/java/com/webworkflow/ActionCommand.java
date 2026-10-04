@@ -6,6 +6,9 @@ import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.MouseButton;
 import com.microsoft.playwright.options.WaitUntilState;
+import com.webcommon.BrowserSupport;
+import com.webcommon.extraction.ExtractionResult;
+import com.webcommon.extraction.Extractor;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
@@ -174,8 +177,20 @@ public class ActionCommand implements Callable<Integer> {
 
                     // Run extraction queries if specified
                     if (step.getExtract() != null && !step.getExtract().isEmpty()) {
-                        List<Map<String, Object>> extractionResults = runExtraction(page, step.getExtract());
-                        stepResult.setExtract(extractionResults);
+                        List<ExtractionResult> extractionResults = Extractor.extract(page, step.getExtract());
+                        // Convert ExtractionResult to Map for JSON serialization
+                        List<Map<String, Object>> extractMaps = new ArrayList<>();
+                        for (ExtractionResult er : extractionResults) {
+                            Map<String, Object> entry = new LinkedHashMap<>();
+                            entry.put("query", er.getQuery());
+                            entry.put("count", er.getCount());
+                            entry.put("matches", er.getMatches());
+                            if (er.hasError()) {
+                                entry.put("error", er.getError());
+                            }
+                            extractMaps.add(entry);
+                        }
+                        stepResult.setExtract(extractMaps);
                     }
 
                     // Apply delay after step
@@ -446,8 +461,19 @@ public class ActionCommand implements Callable<Integer> {
             case "extract" -> {
                 // Extraction-only step, run extraction queries
                 if (step.getExtract() != null && !step.getExtract().isEmpty()) {
-                    List<Map<String, Object>> extractionResults = runExtraction(page, step.getExtract());
-                    result.setExtract(extractionResults);
+                    List<ExtractionResult> extractionResults = Extractor.extract(page, step.getExtract());
+                    List<Map<String, Object>> extractMaps = new ArrayList<>();
+                    for (ExtractionResult er : extractionResults) {
+                        Map<String, Object> entry = new LinkedHashMap<>();
+                        entry.put("query", er.getQuery());
+                        entry.put("count", er.getCount());
+                        entry.put("matches", er.getMatches());
+                        if (er.hasError()) {
+                            entry.put("error", er.getError());
+                        }
+                        extractMaps.add(entry);
+                    }
+                    result.setExtract(extractMaps);
                 }
             }
             default -> throw new IllegalArgumentException("Unsupported action: " + action);
@@ -620,51 +646,6 @@ public class ActionCommand implements Callable<Integer> {
             }
         }
 
-        return results;
-    }
-
-    private List<Map<String, Object>> runExtraction(Page page, List<ExtractQuery> extractQueries) {
-        List<Map<String, Object>> results = new ArrayList<>();
-        if (extractQueries == null || extractQueries.isEmpty()) {
-            return results;
-        }
-        for (ExtractQuery eq : extractQueries) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("query", eq.getQuery());
-
-            try {
-                Locator locator = page.locator(eq.getQuery());
-                int total = locator.count();
-                int take = eq.getLimit() > 0 ? Math.min(total, eq.getLimit()) : total;
-
-                List<Map<String, Object>> matches = new ArrayList<>();
-                for (int i = 0; i < take; i++) {
-                    Locator el = locator.nth(i);
-                    Map<String, Object> match = new LinkedHashMap<>();
-                    match.put("text", el.innerText().trim());
-
-                    if (!eq.getAttrs().isEmpty()) {
-                        Map<String, String> attrValues = new LinkedHashMap<>();
-                        for (String attr : eq.getAttrs()) {
-                            attrValues.put(attr, el.getAttribute(attr));
-                        }
-                        match.put("attributes", attrValues);
-                    }
-                    if (eq.isHtml()) {
-                        match.put("html", el.innerHTML());
-                    }
-                    matches.add(match);
-                }
-
-                entry.put("count", total);
-                entry.put("matches", matches);
-            } catch (PlaywrightException e) {
-                entry.put("count", 0);
-                entry.put("matches", List.of());
-                entry.put("error", BrowserSupport.firstLine(e.getMessage()));
-            }
-            results.add(entry);
-        }
         return results;
     }
 }

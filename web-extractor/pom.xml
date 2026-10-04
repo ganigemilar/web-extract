@@ -19,4 +19,12 @@
     <main.class>com.webextractor.Main</main.class>
   </properties>
 
+  <dependencies>
+    <dependency>
+      <groupId>com.webcommon</groupId>
+      <artifactId>web-common</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+
 </project>

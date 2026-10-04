@@ -1,14 +1,13 @@
-package com.webextractor;
+package com.webcommon;
 
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Playwright;
 
-final class BrowserSupport {
+public final class BrowserSupport {
 
-  private BrowserSupport() {
-  }
+  private BrowserSupport() {}
 
-  static BrowserType type(Playwright playwright, String name) {
+  public static BrowserType type(Playwright playwright, String name) {
     return switch (name.toLowerCase()) {
       case "chromium" -> playwright.chromium();
       case "firefox" -> playwright.firefox();
@@ -18,7 +17,7 @@ final class BrowserSupport {
     };
   }
 
-  static String firstLine(String message) {
+  public static String firstLine(String message) {
     if (message == null) return "unknown error";
     int nl = message.indexOf('\n');
     return nl < 0 ? message : message.substring(0, nl);
