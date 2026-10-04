@@ -60,7 +60,7 @@ web-workflow action [options]
   "steps": [
     {
       "step": "optional step name",
-      "action": "click|fill|type|press|hover|select|check|uncheck|wait|navigate|reload|goback|goforward|screenshot|assert",
+      "action": "click|fill|type|press|hover|select|check|uncheck|wait|navigate|reload|goback|goforward|screenshot|assert|extract",
       "selector": "xpath=//... or css=... or text=... or role=...",
       "value": "value for fill/type/press/select/navigate/screenshot",
       "waitFor": "selector to wait for before action",
@@ -68,6 +68,7 @@ web-workflow action [options]
       "delay": 500,
       "options": { "force": false, "clickCount": 1, "button": "left", "fullPage": false, "exact": false, "modifiers": [] },
       "assert": { "urlContains": "...", "selectorExists": "...", ... },
+      "extract": [ { "query": ".item", "attrs": ["href"], "html": false, "limit": 10 } ],
       "continueOnError": false
     }
   ]
@@ -93,6 +94,7 @@ web-workflow action [options]
 | `goback` / `goforward` | Browser history navigation | (none) |
 | `screenshot` | Take screenshot | `value` (file path) |
 | `assert` | Assertion-only step | `assert` object |
+| `extract` | Extract data from page | `extract` array |
 
 #### Assertions (inline or standalone `assert` step)
 
@@ -110,6 +112,51 @@ web-workflow action [options]
   "jsExpression": "document.querySelector('...').innerText === 'expected'"
 }
 ```
+
+#### Extraction (inline on any step or standalone `extract` step)
+
+Extract data from the current page using the same query engine as `web-extractor`.
+
+**Inline extraction** (runs after the step's action):
+```json
+{
+  "step": "click and extract results",
+  "action": "click",
+  "selector": "button.search",
+  "waitForNavigation": true,
+  "extract": [
+    { "query": ".result-item", "attrs": ["href", "data-id"], "html": true, "limit": 10 }
+  ]
+}
+```
+
+**Standalone extraction step** (action: `extract`):
+```json
+{
+  "step": "extract product data",
+  "action": "extract",
+  "extract": [
+    { "query": "h1.product-title", "attrs": [] },
+    { "query": ".price", "attrs": ["data-currency"] },
+    { "query": "a.product-link", "attrs": ["href"], "limit": 5 }
+  ]
+}
+```
+
+**Extract Query Fields**:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `query` | string | (required) | CSS/XPath/text/role selector (e.g., `.item`, `xpath=//div`, `text=Submit`) |
+| `attrs` | string[] | `[]` | Attributes to extract from each match (e.g., `["href", "src", "data-id"]`) |
+| `html` | boolean | `false` | Include inner HTML of each match |
+| `limit` | integer | `0` | Max matches to return (0 = all) |
+
+**Selector prefixes** (same as web-extractor):
+- `css=.class` — CSS selector (default)
+- `xpath=//div` — XPath selector
+- `text=Login` — Text selector
+- `role=button` — ARIA role selector
 
 #### Examples
 
@@ -169,6 +216,56 @@ web-workflow action -i login-flow.json -s session.json --update-session
 web-workflow action --plan '{"url":"https://example.com","steps":[{"action":"click","selector":"a"}]}'
 ```
 
+**Extract data after click (inline extraction):**
+
+```json
+{
+  "name": "Search and Extract",
+  "url": "https://example.com/search",
+  "steps": [
+    {
+      "step": "fill search",
+      "action": "fill",
+      "selector": "input[name='q']",
+      "value": "product"
+    },
+    {
+      "step": "click search and extract results",
+      "action": "click",
+      "selector": "button.search",
+      "waitForNavigation": true,
+      "extract": [
+        { "query": ".product-item", "attrs": ["href", "data-id"], "html": false, "limit": 20 }
+      ]
+    }
+  ]
+}
+```
+
+```bash
+web-workflow action -i search-extract.json
+```
+
+**Standalone extraction step:**
+
+```json
+{
+  "name": "Extract Product Details",
+  "url": "https://shop.example.com/product/123",
+  "steps": [
+    { "action": "wait", "selector": ".product-detail" },
+    {
+      "action": "extract",
+      "extract": [
+        { "query": "h1.product-title" },
+        { "query": ".price", "attrs": ["data-currency"] },
+        { "query": ".description" }
+      ]
+    }
+  ]
+}
+```
+
 **Debug with headed browser:**
 
 ```bash
@@ -206,6 +303,15 @@ The command outputs a JSON file with the following structure:
       "navigated": false,
       "newUrl": "https://www.google.com/",
       "assertions": null,
+      "extract": [
+        {
+          "query": ".result",
+          "count": 5,
+          "matches": [
+            { "text": "Result 1", "attributes": { "href": "/result/1" } }
+          ]
+        }
+      ],
       "options": null
     },
     {

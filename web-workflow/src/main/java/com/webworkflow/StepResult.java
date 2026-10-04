@@ -43,6 +43,9 @@ public class StepResult {
     @JsonProperty("options")
     private Map<String, Object> options;
 
+    @JsonProperty("extract")
+    private List<Map<String, Object>> extract;
+
     public StepResult() {}
 
     public StepResult(TestStep step) {
@@ -88,4 +91,7 @@ public class StepResult {
 
     public Map<String, Object> getOptions() { return options; }
     public void setOptions(Map<String, Object> options) { this.options = options; }
+
+    public List<Map<String, Object>> getExtract() { return extract; }
+    public void setExtract(List<Map<String, Object>> extract) { this.extract = extract; }
 }

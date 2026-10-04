@@ -77,9 +77,10 @@ mvn test
 ### Data Models
 
 - **TestPlan.java** - Root test plan configuration (name, url, browser, timeout, steps, session, etc.)
-- **TestStep.java** - Individual step with action, selector, value, waitFor, assertions, options, delay, continueOnError
+- **TestStep.java** - Individual step with action, selector, value, waitFor, assertions, options, delay, continueOnError, extract
+- **ExtractQuery.java** - Extraction query definition (query, attrs, html, limit)
 - **Assertion.java** - Assertion definitions (urlContains, selectorExists, selectorText, selectorValue, selectorCount, jsExpression, etc.)
-- **StepResult.java** - Execution result per step (success, matches, error, duration, navigated, newUrl, assertions)
+- **StepResult.java** - Execution result per step (success, matches, error, duration, navigated, newUrl, assertions, extract)
 - **AssertionResult.java** - Individual assertion result (type, expected, actual, passed, message)
 
 ### Utilities
@@ -113,6 +114,7 @@ Selectors support multiple strategies via prefix:
 | `goback` / `goforward` | Browser history navigation | (none) |
 | `screenshot` | Take screenshot | `value` (file path) |
 | `assert` | Assertion-only step | `assert` object |
+| `extract` | Extract data from page | `extract` array |
 
 ### Assertions
 
@@ -124,6 +126,63 @@ Can be inline on any step (`assert` field) or as standalone `assert` action:
 - `selectorValue` with `equals`
 - `selectorCount` with `equals`, `gt`, `lt`
 - `jsExpression` - arbitrary JavaScript returning boolean
+
+### Extraction
+
+Extract data from the current page using the same query engine as `web-extractor`. Can be used inline on any step (runs after the step's action) or as a standalone `extract` action step.
+
+**ExtractQuery fields** (in `extract` array on step or `extract` action):
+- `query` (string, required) - CSS/XPath/text/role selector
+- `attrs` (string[], default: []) - Attributes to extract (e.g., `["href", "src", "data-id"]`)
+- `html` (boolean, default: false) - Include inner HTML of each match
+- `limit` (int, default: 0) - Max matches to return (0 = all)
+
+**Selector prefixes** (same as web-extractor):
+- `css=.class` — CSS selector (default)
+- `xpath=//div` — XPath selector
+- `text=Login` — Text selector
+- `role=button` — ARIA role selector
+
+**Inline extraction example**:
+```json
+{
+  "step": "click and extract results",
+  "action": "click",
+  "selector": "button.search",
+  "waitForNavigation": true,
+  "extract": [
+    { "query": ".result-item", "attrs": ["href", "data-id"], "html": true, "limit": 10 }
+  ]
+}
+```
+
+**Standalone extraction step example**:
+```json
+{
+  "step": "extract product data",
+  "action": "extract",
+  "extract": [
+    { "query": "h1.product-title" },
+    { "query": ".price", "attrs": ["data-currency"] },
+    { "query": "a.product-link", "attrs": ["href"], "limit": 5 }
+  ]
+}
+```
+
+**Extraction output** (added to step result):
+```json
+{
+  "extract": [
+    {
+      "query": ".result-item",
+      "count": 5,
+      "matches": [
+        { "text": "Item 1", "attributes": { "href": "/item/1", "data-id": "1" }, "html": "<div>..." }
+      ]
+    }
+  ]
+}
+```
 
 ### Data Flow
 
@@ -141,6 +200,7 @@ Can be inline on any step (`assert` field) or as standalone `assert` action:
 
 - Add new action types in `ActionCommand.executeStep()` switch statement
 - Add new assertion types in `Assertion` class and `ActionCommand.executeAssertions()`
+- Add new extraction features in `ExtractQuery` class and `ActionCommand.runExtraction()`
 - Add new output formats by modifying the result serialization in `ActionCommand.call()`
 - Add new subcommands by creating new `@Command` classes and adding them to `Main`'s subcommands array
 

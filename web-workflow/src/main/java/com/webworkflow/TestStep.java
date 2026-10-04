@@ -3,6 +3,7 @@ package com.webworkflow;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
 import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -38,6 +39,9 @@ public class TestStep {
     @JsonProperty("continueOnError")
     private boolean continueOnError = false;
 
+    @JsonProperty("extract")
+    private List<ExtractQuery> extract;
+
     public String getStepName() { return stepName; }
     public void setStepName(String stepName) { this.stepName = stepName; }
 
@@ -67,4 +71,7 @@ public class TestStep {
 
     public boolean isContinueOnError() { return continueOnError; }
     public void setContinueOnError(boolean continueOnError) { this.continueOnError = continueOnError; }
+
+    public List<ExtractQuery> getExtract() { return extract; }
+    public void setExtract(List<ExtractQuery> extract) { this.extract = extract; }
 }
