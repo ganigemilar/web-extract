@@ -103,10 +103,9 @@ class WebExtractorIntegrationTest {
     @DisplayName("Login command requires URL")
     void testLoginRequiresUrl() {
         CommandLine cmd = new CommandLine(new Main());
-        CommandLine loginCmd = cmd.getSubcommands().get("login");
 
         // Execute with missing required option - should fail with non-zero exit code
-        int exitCode = loginCmd.execute("-s", sessionFile.getAbsolutePath());
+        int exitCode = cmd.execute("login", "-s", sessionFile.getAbsolutePath());
         assertNotEquals(0, exitCode, "Login command should fail when URL is missing");
     }
 
@@ -115,10 +114,9 @@ class WebExtractorIntegrationTest {
     @DisplayName("Extract command requires URL")
     void testExtractRequiresUrl() {
         CommandLine cmd = new CommandLine(new Main());
-        CommandLine extractCmd = cmd.getSubcommands().get("extract");
 
         // Execute with missing required option - should fail with non-zero exit code
-        int exitCode = extractCmd.execute("-o", outputFile.getAbsolutePath());
+        int exitCode = cmd.execute("extract", "-o", outputFile.getAbsolutePath());
         assertNotEquals(0, exitCode, "Extract command should fail when URL is missing");
     }
 
@@ -127,10 +125,9 @@ class WebExtractorIntegrationTest {
     @DisplayName("Extract command requires at least one query")
     void testExtractRequiresQuery() {
         CommandLine cmd = new CommandLine(new Main());
-        CommandLine extractCmd = cmd.getSubcommands().get("extract");
 
         // Execute with missing required option - should fail with non-zero exit code
-        int exitCode = extractCmd.execute("-u", "https://example.com", "-o", outputFile.getAbsolutePath());
+        int exitCode = cmd.execute("extract", "-u", "https://example.com", "-o", outputFile.getAbsolutePath());
         assertNotEquals(0, exitCode, "Extract command should fail when query is missing");
     }
 

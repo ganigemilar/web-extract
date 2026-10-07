@@ -159,10 +159,9 @@ class WebWorkflowIntegrationTest {
     @DisplayName("Action command requires input or plan")
     void testActionRequiresInput() {
         CommandLine cmd = new CommandLine(new Main());
-        CommandLine actionCmd = cmd.getSubcommands().get("action");
 
         // Execute with missing required option - should fail with non-zero exit code
-        int exitCode = actionCmd.execute("-o", outputFile.getAbsolutePath());
+        int exitCode = cmd.execute("action", "-o", outputFile.getAbsolutePath());
         assertNotEquals(0, exitCode, "Action command should fail when input/plan is missing");
     }
 

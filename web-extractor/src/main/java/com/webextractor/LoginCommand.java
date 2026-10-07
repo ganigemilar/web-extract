@@ -7,6 +7,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import com.webcommon.BrowserSupport;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -19,6 +20,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -31,7 +33,13 @@ import java.util.concurrent.Callable;
         "then press Enter in the terminal to save the session.",
         "",
         "Automatic mode: pass --user-selector and --pass-selector. Credentials are read from the",
-        "WEB_EXTRACT_USER / WEB_EXTRACT_PASS environment variables, or prompted if not set."})
+        "WEB_EXTRACT_USER / WEB_EXTRACT_PASS environment variables, or prompted if not set.",
+        "",
+        "Anti-bot avoidance:",
+        "  Use --user-data-dir to persist a real browser profile (recommended for Cloudflare, Google OAuth).",
+        "  The profile stores cookies, fingerprint, and login state between runs.",
+        "  First run: browser opens, you log in manually (solves CAPTCHA/2FA), press Enter.",
+        "  Subsequent runs: reuses the profile, often bypassing challenges automatically."})
 public class LoginCommand implements Callable<Integer> {
 
   @Parameters(index = "0", paramLabel = "LOGIN_URL", description = "URL of the login page.")
@@ -69,9 +77,29 @@ public class LoginCommand implements Callable<Integer> {
       description = "Show the window in automatic mode too (manual mode is always headed).")
   private boolean headed;
 
-  @Option(names = "--timeout", defaultValue = "30000", paramLabel = "MS",
+  @Option(names = "--timeout", defaultValue = "60000", paramLabel = "MS",
       description = "Timeout in milliseconds (default: ${DEFAULT-VALUE}).")
   private double timeoutMs;
+
+  @Option(names = "--user-data-dir", paramLabel = "DIR",
+      description = "Persistent browser profile directory. Reuse across runs to avoid Cloudflare/Google challenges. " +
+                    "First run: log in manually and solve CAPTCHA. Later runs: often bypasses challenges.")
+  private Path userDataDir;
+
+  @Option(names = "--browser-executable", paramLabel = "PATH",
+      description = "Path to external browser executable (Chrome, Edge, Brave, Firefox, etc.). " +
+                    "If set, launches this browser with remote debugging and connects via CDP. " +
+                    "Avoids automation detection entirely since it's your real browser.")
+  private String browserExecutable;
+
+  @Option(names = "--browser-type", paramLabel = "TYPE",
+      description = "Type of external browser: chrome, edge, brave, vivaldi, chromium, firefox (default: chrome). " +
+                    "Used to determine default launch args if --browser-executable not specified.")
+  private String browserType = "chrome";
+
+  @Option(names = "--cdp-port", defaultValue = "9222", paramLabel = "PORT",
+      description = "CDP/remote debugging port for external browser (default: ${DEFAULT-VALUE}).")
+  private int cdpPort = 9222;
 
   @Override
   public Integer call() throws Exception {
@@ -81,17 +109,44 @@ public class LoginCommand implements Callable<Integer> {
       return 2;
     }
 
+    // External browser mode: use your real browser via CDP
+    if (browserExecutable != null && !browserExecutable.isBlank()) {
+      return callWithExternalBrowser();
+    }
+
+    // Original Playwright browser modes
     try (Playwright playwright = Playwright.create()) {
       BrowserType type = BrowserSupport.type(playwright, browserName);
       boolean showWindow = !auto || headed;
 
-      try (Browser browser = type.launch(new BrowserType.LaunchOptions().setHeadless(!showWindow));
-           BrowserContext context = browser.newContext()) {
+      Browser browser = null;
+      BrowserContext context;
 
-        Page page = context.newPage();
+      if (userDataDir != null) {
+        // Use persistent context - reuses real browser profile, avoids anti-bot detection
+        Files.createDirectories(userDataDir);
+        System.err.println("Using persistent browser profile: " + userDataDir.toAbsolutePath());
+        context = type.launchPersistentContext(userDataDir,
+            new BrowserType.LaunchPersistentContextOptions()
+                .setHeadless(!showWindow)
+                .setArgs(getStealthArgs()));
+        browser = context.browser(); // Get browser from context for potential close
+      } else {
+        // Ephemeral context (original behavior)
+        browser = type.launch(new BrowserType.LaunchOptions()
+            .setHeadless(!showWindow)
+            .setArgs(getStealthArgs()));
+        context = browser.newContext();
+      }
+
+      try {
+        Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
         page.setDefaultTimeout(timeoutMs);
         System.err.println("Opening " + url + " ...");
         page.navigate(url);
+
+        // Wait for Cloudflare challenge if present
+        waitForCloudflare(page);
 
         if (auto) {
           autoLogin(page);
@@ -105,7 +160,11 @@ public class LoginCommand implements Callable<Integer> {
           Files.createDirectories(parent);
         }
         context.storageState(new BrowserContext.StorageStateOptions().setPath(session));
-        restrictPermissions(session);
+      } finally {
+        if (userDataDir == null && browser != null) {
+          browser.close(); // Only close ephemeral browser
+        }
+        // For persistent context, don't close - let OS handle it
       }
     } catch (PlaywrightException e) {
       System.err.println("Playwright error: " + BrowserSupport.firstLine(e.getMessage()));
@@ -118,6 +177,109 @@ public class LoginCommand implements Callable<Integer> {
     System.err.println("Session saved to " + session.toAbsolutePath()
         + " (treat it like a password: it grants access to your account).");
     return 0;
+  }
+
+  /** Login using an external browser (Chrome, Edge, Brave, Firefox, etc.) via CDP */
+  private Integer callWithExternalBrowser() throws Exception {
+    boolean auto = userSelector != null || passSelector != null;
+    ExternalBrowserSupport.BrowserType extType = ExternalBrowserSupport.BrowserType.fromString(browserType);
+    String executablePath = browserExecutable;
+
+    // If executable not specified, try to find it
+    if (executablePath == null || executablePath.isBlank()) {
+      executablePath = ExternalBrowserSupport.findBrowserExecutable(extType);
+      System.err.println("Auto-detected " + extType.displayName + ": " + executablePath);
+    }
+
+    // Determine user data directory
+    Path profileDir = userDataDir != null ? userDataDir : Path.of("browser-profile-" + extType.executableName);
+
+    ExternalBrowserSupport.LaunchedBrowser launched = null;
+    try (Playwright playwright = Playwright.create()) {
+      // Launch external browser
+      launched = ExternalBrowserSupport.launch(extType, executablePath, profileDir, cdpPort, url);
+
+      // Connect via CDP
+      BrowserContext context;
+      if (extType == ExternalBrowserSupport.BrowserType.FIREFOX) {
+        context = ExternalBrowserSupport.connectFirefox(playwright, cdpPort);
+      } else {
+        context = ExternalBrowserSupport.connect(playwright, cdpPort);
+      }
+
+      try {
+        Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
+        page.setDefaultTimeout(timeoutMs);
+        System.err.println("Connected to external browser. Opening " + url + " ...");
+        page.navigate(url);
+
+        // Wait for Cloudflare challenge if present
+        waitForCloudflare(page);
+
+        if (auto) {
+          autoLogin(page);
+        } else {
+          ExternalBrowserSupport.waitForUser("Log in using the browser window, then press Enter here to save the session...");
+        }
+
+        Path parent = session.toAbsolutePath().getParent();
+        if (parent != null) {
+          Files.createDirectories(parent);
+        }
+        context.storageState(new BrowserContext.StorageStateOptions().setPath(session));
+      } finally {
+        // Don't close context - let the external browser process handle it
+        // context.close(); // This would close the browser window
+      }
+    } catch (PlaywrightException e) {
+      System.err.println("Playwright error: " + BrowserSupport.firstLine(e.getMessage()));
+      return 1;
+    } catch (IllegalArgumentException | IllegalStateException e) {
+      System.err.println(e.getMessage());
+      return 2;
+    } finally {
+      if (launched != null) {
+        System.err.println("Closing external browser...");
+        launched.close();
+      }
+    }
+
+    System.err.println("Session saved to " + session.toAbsolutePath()
+        + " (treat it like a password: it grants access to your account).");
+    return 0;
+  }
+
+  /** Browser launch arguments to reduce fingerprinting and avoid detection */
+  private List<String> getStealthArgs() {
+    return List.of(
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process,CrossOriginOpenerPolicy",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions-except",
+        "--disable-plugins-discovery",
+        "--disable-default-apps",
+        "--password-store=basic",
+        "--use-mock-keychain"
+    );
+  }
+
+  /** Wait for Cloudflare challenge to be solved (manual or automatic) */
+  private void waitForCloudflare(Page page) {
+    try {
+      // Check for Cloudflare challenge page
+      page.waitForSelector("#challenge-running, .cf-challenge-running, [data-ray], .ray-id",
+          new Page.WaitForSelectorOptions().setTimeout(5000).setState(WaitForSelectorState.VISIBLE));
+      System.err.println("Cloudflare challenge detected. Waiting for you to solve it in the browser...");
+      System.err.println("Press Enter here AFTER solving the challenge in the browser window...");
+      new BufferedReader(new InputStreamReader(System.in)).readLine();
+      // Give extra time for challenge to complete
+      page.waitForLoadState(LoadState.NETWORKIDLE);
+    } catch (PlaywrightException ignored) {
+      // No Cloudflare challenge detected, continue
+    } catch (IOException e) {
+      System.err.println("Error reading input: " + e.getMessage());
+    }
   }
 
   private void autoLogin(Page page) {
@@ -156,14 +318,6 @@ public class LoginCommand implements Callable<Integer> {
       page.waitForSelector(successSelector);
     } else {
       page.waitForLoadState(LoadState.NETWORKIDLE);
-    }
-  }
-
-  private static void restrictPermissions(Path file) {
-    try {
-      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
-    } catch (UnsupportedOperationException | IOException ignored) {
-      // Non-POSIX file system (e.g. Windows): skip.
     }
   }
 }

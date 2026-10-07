@@ -8,6 +8,8 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.webcommon.BrowserSupport;
 import com.webcommon.extraction.ExtractionOptions;
@@ -25,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.io.IOException;
 
 @Command(
     name = "extract",
@@ -78,6 +81,26 @@ public class ExtractCommand implements Callable<Integer> {
       description = "Navigation/wait timeout in milliseconds (default: ${DEFAULT-VALUE}).")
   private double timeoutMs;
 
+  @Option(names = "--user-data-dir", paramLabel = "DIR",
+      description = "Persistent browser profile directory (from 'login --user-data-dir'). " +
+                    "Reuses cookies/fingerprint to avoid Cloudflare/Google challenges.")
+  private Path userDataDir;
+
+  @Option(names = "--browser-executable", paramLabel = "PATH",
+      description = "Path to external browser executable (Chrome, Edge, Brave, Firefox, etc.). " +
+                    "If set, launches this browser with remote debugging and connects via CDP. " +
+                    "Avoids automation detection entirely since it's your real browser.")
+  private String browserExecutable;
+
+  @Option(names = "--browser-type", paramLabel = "TYPE",
+      description = "Type of external browser: chrome, edge, brave, vivaldi, chromium, firefox (default: chrome). " +
+                    "Used to determine default launch args if --browser-executable not specified.")
+  private String browserType = "chrome";
+
+  @Option(names = "--cdp-port", defaultValue = "9222", paramLabel = "PORT",
+      description = "CDP/remote debugging port for external browser (default: ${DEFAULT-VALUE}).")
+  private int cdpPort = 9222;
+
   @Option(names = {"--delay"}, paramLabel = "MS",
       description = "Delay in milliseconds after page load before extracting.")
   private long delayMs = 0;
@@ -93,6 +116,11 @@ public class ExtractCommand implements Callable<Integer> {
       return 2;
     }
 
+    // External browser mode: use your real browser via CDP
+    if (browserExecutable != null && !browserExecutable.isBlank()) {
+      return callWithExternalBrowser();
+    }
+
     Map<String, Object> result = new LinkedHashMap<>();
 
     try (Playwright playwright = Playwright.create()) {
@@ -103,10 +131,28 @@ public class ExtractCommand implements Callable<Integer> {
         contextOptions.setStorageStatePath(session);
       }
 
-      try (Browser browser = type.launch(new BrowserType.LaunchOptions().setHeadless(!headed));
-           BrowserContext context = browser.newContext(contextOptions)) {
+      Browser browser = null;
+      BrowserContext context;
 
-        Page page = context.newPage();
+      if (userDataDir != null) {
+        // Use persistent context - reuses real browser profile
+        Files.createDirectories(userDataDir);
+        System.err.println("Using persistent browser profile: " + userDataDir.toAbsolutePath());
+        context = type.launchPersistentContext(userDataDir,
+            new BrowserType.LaunchPersistentContextOptions()
+                .setHeadless(!headed)
+                .setArgs(getStealthArgs()));
+        browser = context.browser();
+      } else {
+        // Ephemeral context (original behavior)
+        browser = type.launch(new BrowserType.LaunchOptions()
+            .setHeadless(!headed)
+            .setArgs(getStealthArgs()));
+        context = browser.newContext(contextOptions);
+      }
+
+      try {
+        Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
         page.setDefaultTimeout(timeoutMs);
 
         System.err.println("Opening " + url + (session != null ? " with session " + session : "") + " ...");
@@ -151,6 +197,10 @@ public class ExtractCommand implements Callable<Integer> {
         if (updateSession) {
           context.storageState(new BrowserContext.StorageStateOptions().setPath(session));
         }
+      } finally {
+        if (userDataDir == null && browser != null) {
+          browser.close();
+        }
       }
     } catch (PlaywrightException e) {
       System.err.println("Playwright error: " + BrowserSupport.firstLine(e.getMessage()));
@@ -170,5 +220,127 @@ public class ExtractCommand implements Callable<Integer> {
 
     System.err.println("Saved results to " + output.toAbsolutePath());
     return 0;
+  }
+
+  /** Extract using an external browser (Chrome, Edge, Brave, Firefox, etc.) via CDP */
+  private Integer callWithExternalBrowser() throws Exception {
+    Map<String, Object> result = new LinkedHashMap<>();
+    ExternalBrowserSupport.BrowserType extType = ExternalBrowserSupport.BrowserType.fromString(browserType);
+    String executablePath = browserExecutable;
+
+    // If executable not specified, try to find it
+    if (executablePath == null || executablePath.isBlank()) {
+      executablePath = ExternalBrowserSupport.findBrowserExecutable(extType);
+      System.err.println("Auto-detected " + extType.displayName + ": " + executablePath);
+    }
+
+    // Determine user data directory
+    Path profileDir = userDataDir != null ? userDataDir : Path.of("browser-profile-" + extType.executableName);
+
+    ExternalBrowserSupport.LaunchedBrowser launched = null;
+    try (Playwright playwright = Playwright.create()) {
+      // Launch external browser
+      launched = ExternalBrowserSupport.launch(extType, executablePath, profileDir, cdpPort, url);
+
+      // Connect via CDP
+      BrowserContext context;
+      if (extType == ExternalBrowserSupport.BrowserType.FIREFOX) {
+        context = ExternalBrowserSupport.connectFirefox(playwright, cdpPort);
+      } else {
+        context = ExternalBrowserSupport.connect(playwright, cdpPort);
+      }
+
+      // Load session if provided
+      if (session != null && Files.isRegularFile(session)) {
+        // Note: CDP connection doesn't support setting storage state directly
+        // The session should be loaded in the browser profile itself
+        System.err.println("Note: With external browser, use the browser profile (--user-data-dir) for session persistence. --session file is not applied to CDP connection.");
+      }
+
+      try {
+        Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
+        page.setDefaultTimeout(timeoutMs);
+
+        System.err.println("Connected to external browser. Opening " + url + " ...");
+        page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.LOAD));
+        if (waitFor != null && !waitFor.isBlank()) {
+          page.waitForSelector(waitFor);
+        }
+        if (delayMs > 0) {
+          page.waitForTimeout(delayMs);
+        }
+
+        result.put("url", page.url());
+        result.put("title", page.title());
+        result.put("extractedAt", Instant.now().toString());
+        result.put("sessionUsed", false);
+
+        // Create global extraction options from CLI flags
+        ExtractionOptions options = new ExtractionOptions(attrs, includeHtml, limit);
+
+        // Use shared extractor
+        List<ExtractionResult> extractionResults = Extractor.extract(page, queries, options);
+
+        // Convert to JSON-compatible format
+        List<Map<String, Object>> queryResults = new ArrayList<>();
+        for (ExtractionResult er : extractionResults) {
+          Map<String, Object> entry = new LinkedHashMap<>();
+          entry.put("query", er.getQuery());
+          entry.put("count", er.getCount());
+          entry.put("matches", er.getMatches());
+          if (er.hasError()) {
+            entry.put("error", er.getError());
+          }
+          queryResults.add(entry);
+        }
+        result.put("results", queryResults);
+
+        if (queryResults.stream().allMatch(r -> ((Integer) r.get("count")) == 0)) {
+          System.err.println("Warning: no matches at all. Check if you're logged in (use --user-data-dir with a profile where you've logged in).");
+        }
+
+        // Note: --update-session not supported with external browser CDP connection
+        // The profile itself maintains the session
+      } finally {
+        // Don't close context - let the external browser process handle it
+      }
+    } catch (PlaywrightException e) {
+      System.err.println("Playwright error: " + BrowserSupport.firstLine(e.getMessage()));
+      return 1;
+    } catch (IllegalArgumentException e) {
+      System.err.println(e.getMessage());
+      return 2;
+    } finally {
+      if (launched != null) {
+        System.err.println("Closing external browser...");
+        launched.close();
+      }
+    }
+
+    Path parent = output.toAbsolutePath().getParent();
+    if (parent != null) {
+      Files.createDirectories(parent);
+    }
+    new ObjectMapper()
+        .enable(SerializationFeature.INDENT_OUTPUT)
+        .writeValue(output.toFile(), result);
+
+    System.err.println("Saved results to " + output.toAbsolutePath());
+    return 0;
+  }
+
+  /** Browser launch arguments to reduce fingerprinting and avoid detection */
+  private List<String> getStealthArgs() {
+    return List.of(
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process,CrossOriginOpenerPolicy",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions-except",
+        "--disable-plugins-discovery",
+        "--disable-default-apps",
+        "--password-store=basic",
+        "--use-mock-keychain"
+    );
   }
 }
