@@ -425,6 +425,9 @@ public class ActionCommand implements Callable<Integer> {
           throw new IllegalArgumentException("wait action requires either 'selector' or 'value' (ms)");
         }
       }
+      case "scrolluntil", "infinite-scroll" -> {
+        executeScrollUntil(page, step, result);
+      }
       case "navigate" -> {
         page.navigate(value, new Page.NavigateOptions().setWaitUntil(WaitUntilState.LOAD));
         result.setNavigated(true);
@@ -480,6 +483,90 @@ public class ActionCommand implements Callable<Integer> {
         // Navigation might not always trigger network idle
       }
     }
+  }
+
+  private void executeScrollUntil(Page page, TestStep step, StepResult result) {
+    String selector = step.getSelector();
+    Map<String, Object> options = step.getOptions();
+
+    // Configuration with defaults
+    long delayMs = getOptionAsLong(options, "delayMs", step.getDelay() > 0 ? step.getDelay() : 1000);
+    int maxScrolls = getOptionAsInt(options, "maxScrolls", 100);
+    int stopWhenSameCount = getOptionAsInt(options, "stopWhenSameCount", 3);
+    long scrollAmount = getOptionAsLong(options, "scrollAmount", 0); // 0 = viewport height
+
+    int sameCountStreak = 0;
+    int previousCount = 0;
+    int totalScrolls = 0;
+
+    // Get initial count if selector provided
+    if (selector != null && !selector.isBlank()) {
+      previousCount = page.locator(selector).count();
+      result.setMatches(previousCount);
+    }
+
+    System.err.println("Starting infinite scroll: maxScrolls=" + maxScrolls + ", delayMs=" + delayMs +
+        ", stopWhenSameCount=" + stopWhenSameCount + (selector != null ? ", selector=" + selector : ""));
+
+    for (int i = 0; i < maxScrolls; i++) {
+      // Scroll down
+      if (scrollAmount > 0) {
+        page.evaluate("window.scrollBy(0, " + scrollAmount + ")");
+      } else {
+        page.evaluate("window.scrollBy(0, window.innerHeight)");
+      }
+
+      // Wait for content to load
+      page.waitForTimeout(delayMs);
+      totalScrolls++;
+
+      // Check if we've reached bottom
+      Object atBottomResult = page.evaluate("() => window.innerHeight + window.scrollY >= document.body.scrollHeight - 10");
+      boolean atBottom = Boolean.TRUE.equals(atBottomResult);
+      if (atBottom) {
+        System.err.println("Reached bottom of page after " + totalScrolls + " scrolls");
+        break;
+      }
+
+      // Check if new content loaded (if selector provided)
+      if (selector != null && !selector.isBlank()) {
+        int currentCount = page.locator(selector).count();
+        result.setMatches(currentCount);
+
+        if (currentCount > previousCount) {
+          System.err.println("Scroll " + totalScrolls + ": found " + currentCount + " items (+" + (currentCount - previousCount) + ")");
+          previousCount = currentCount;
+          sameCountStreak = 0;
+        } else {
+          sameCountStreak++;
+          System.err.println("Scroll " + totalScrolls + ": no new items (" + sameCountStreak + "/" + stopWhenSameCount + ")");
+          if (sameCountStreak >= stopWhenSameCount) {
+            System.err.println("No new content after " + stopWhenSameCount + " scrolls, stopping");
+            break;
+          }
+        }
+      }
+    }
+
+    result.setSuccess(true);
+  }
+
+  private long getOptionAsLong(Map<String, Object> options, String key, long defaultValue) {
+    if (options != null && options.containsKey(key)) {
+      Object val = options.get(key);
+      if (val instanceof Number) return ((Number) val).longValue();
+      try { return Long.parseLong(val.toString()); } catch (Exception ignored) {}
+    }
+    return defaultValue;
+  }
+
+  private int getOptionAsInt(Map<String, Object> options, String key, int defaultValue) {
+    if (options != null && options.containsKey(key)) {
+      Object val = options.get(key);
+      if (val instanceof Number) return ((Number) val).intValue();
+      try { return Integer.parseInt(val.toString()); } catch (Exception ignored) {}
+    }
+    return defaultValue;
   }
 
   private boolean shouldWaitForNavigation(String action, TestStep step) {
