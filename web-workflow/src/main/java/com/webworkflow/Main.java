@@ -11,12 +11,12 @@ import picocli.CommandLine.Command;
     subcommands = {ActionCommand.class, TemplateCommand.class})
 public class Main implements Runnable {
 
+  public static void main(String[] args) {
+    System.exit(new CommandLine(new Main()).execute(args));
+  }
+
   @Override
   public void run() {
     new CommandLine(this).usage(System.out);
-  }
-
-  public static void main(String[] args) {
-    System.exit(new CommandLine(new Main()).execute(args));
   }
 }
