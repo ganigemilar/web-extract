@@ -7,6 +7,7 @@ import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.MouseButton;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.webcommon.BrowserSupport;
+import com.webcommon.extraction.ExtractionQuery;
 import com.webcommon.extraction.ExtractionResult;
 import com.webcommon.extraction.Extractor;
 import picocli.CommandLine.Command;
@@ -495,6 +496,11 @@ public class ActionCommand implements Callable<Integer> {
     int stopWhenSameCount = getOptionAsInt(options, "stopWhenSameCount", 3);
     long scrollAmount = getOptionAsLong(options, "scrollAmount", 0); // 0 = viewport height
 
+    // Check if inline extraction is requested for each scroll
+    List<ExtractionQuery> extractQueries = step.getExtract();
+    boolean extractEachScroll = extractQueries != null && !extractQueries.isEmpty();
+    List<Map<String, Object>> allExtractions = new ArrayList<>();
+
     int sameCountStreak = 0;
     int previousCount = 0;
     int totalScrolls = 0;
@@ -505,8 +511,16 @@ public class ActionCommand implements Callable<Integer> {
       result.setMatches(previousCount);
     }
 
+    // Initial extraction before any scroll (if requested)
+    if (extractEachScroll) {
+      List<Map<String, Object>> initialExtract = runExtraction(page, extractQueries);
+      allExtractions.addAll(initialExtract);
+      System.err.println("Initial extraction: " + initialExtract.size() + " queries executed");
+    }
+
     System.err.println("Starting infinite scroll: maxScrolls=" + maxScrolls + ", delayMs=" + delayMs +
-        ", stopWhenSameCount=" + stopWhenSameCount + (selector != null ? ", selector=" + selector : ""));
+        ", stopWhenSameCount=" + stopWhenSameCount + (selector != null ? ", selector=" + selector : "")
+        + (extractEachScroll ? ", extractEachScroll=true" : ""));
 
     for (int i = 0; i < maxScrolls; i++) {
       // Scroll down
@@ -546,9 +560,37 @@ public class ActionCommand implements Callable<Integer> {
           }
         }
       }
+
+      // Extract after each scroll (if requested)
+      if (extractEachScroll) {
+        List<Map<String, Object>> scrollExtract = runExtraction(page, extractQueries);
+        allExtractions.addAll(scrollExtract);
+        System.err.println("Scroll " + totalScrolls + " extraction: " + scrollExtract.size() + " queries executed");
+      }
+    }
+
+    // Store all extractions in step result
+    if (extractEachScroll) {
+      result.setExtract(allExtractions);
     }
 
     result.setSuccess(true);
+  }
+
+  private List<Map<String, Object>> runExtraction(Page page, List<ExtractionQuery> queries) {
+    List<ExtractionResult> extractionResults = Extractor.extract(page, queries);
+    List<Map<String, Object>> extractMaps = new ArrayList<>();
+    for (ExtractionResult er : extractionResults) {
+      Map<String, Object> entry = new LinkedHashMap<>();
+      entry.put("query", er.getQuery());
+      entry.put("count", er.getCount());
+      entry.put("matches", er.getMatches());
+      if (er.hasError()) {
+        entry.put("error", er.getError());
+      }
+      extractMaps.add(entry);
+    }
+    return extractMaps;
   }
 
   private long getOptionAsLong(Map<String, Object> options, String key, long defaultValue) {
