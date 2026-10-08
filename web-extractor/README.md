@@ -63,6 +63,7 @@ web-extract extract --browser-executable "/path/to/chrome" --browser-type chrome
 4. Profile persists cookies/fingerprint—subsequent runs reuse it, often bypassing challenges entirely
 
 **Options:**
+
 | Option | Description |
 |--------|-------------|
 | `--browser-executable PATH` | Path to browser executable (auto-detected if omitted) |
