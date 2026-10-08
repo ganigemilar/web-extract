@@ -101,7 +101,6 @@ public class LoginCommand implements Callable<Integer> {
       description = "CDP/remote debugging port for external browser (default: ${DEFAULT-VALUE}).")
   private int cdpPort = 9222;
 
-  @Override
   public Integer call() throws Exception {
     boolean auto = userSelector != null || passSelector != null;
     if (auto && (userSelector == null || passSelector == null)) {
@@ -129,12 +128,14 @@ public class LoginCommand implements Callable<Integer> {
         context = type.launchPersistentContext(userDataDir,
             new BrowserType.LaunchPersistentContextOptions()
                 .setHeadless(!showWindow)
+                .setIgnoreDefaultArgs(List.of("--enable-automation"))
                 .setArgs(getStealthArgs()));
-        browser = context.browser(); // Get browser from context for potential close
+        browser = context.browser();
       } else {
         // Ephemeral context (original behavior)
         browser = type.launch(new BrowserType.LaunchOptions()
             .setHeadless(!showWindow)
+            .setIgnoreDefaultArgs(List.of("--enable-automation"))
             .setArgs(getStealthArgs()));
         context = browser.newContext();
       }
@@ -161,10 +162,11 @@ public class LoginCommand implements Callable<Integer> {
         }
         context.storageState(new BrowserContext.StorageStateOptions().setPath(session));
       } finally {
-        if (userDataDir == null && browser != null) {
-          browser.close(); // Only close ephemeral browser
+        if (userDataDir != null) {
+          context.close(); // persistent context: close so the profile is flushed to disk
+        } else if (browser != null) {
+          browser.close();
         }
-        // For persistent context, don't close - let OS handle it
       }
     } catch (PlaywrightException e) {
       System.err.println("Playwright error: " + BrowserSupport.firstLine(e.getMessage()));
@@ -199,6 +201,14 @@ public class LoginCommand implements Callable<Integer> {
       // Launch external browser
       launched = ExternalBrowserSupport.launch(extType, executablePath, profileDir, cdpPort, url);
 
+      // Manual mode: do NOT attach Playwright while the user logs in.
+      // Google/SSO popups break when a CDP client is attached (window.opener/postMessage
+      // handoff fails -> "Cross-Origin-Opener-Policy ... postMessage" + "Unsupported provider").
+      // So wait for the user first, and only connect afterwards to read the session.
+      if (!auto) {
+        ExternalBrowserSupport.waitForUser("Log in using the browser window, then press Enter here to save the session...");
+      }
+
       // Connect via CDP
       BrowserContext context;
       if (extType == ExternalBrowserSupport.BrowserType.FIREFOX) {
@@ -208,18 +218,17 @@ public class LoginCommand implements Callable<Integer> {
       }
 
       try {
-        Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
-        page.setDefaultTimeout(timeoutMs);
-        System.err.println("Connected to external browser. Opening " + url + " ...");
-        page.navigate(url);
-
-        // Wait for Cloudflare challenge if present
-        waitForCloudflare(page);
-
         if (auto) {
+          // Automatic mode has to drive the page, so it needs Playwright attached.
+          Page page = context.pages().isEmpty() ? context.newPage() : context.pages().get(0);
+          page.setDefaultTimeout(timeoutMs);
+          System.err.println("Connected to external browser. Opening " + url + " ...");
+          page.navigate(url);
+
+          // Wait for Cloudflare challenge if present
+          waitForCloudflare(page);
+
           autoLogin(page);
-        } else {
-          ExternalBrowserSupport.waitForUser("Log in using the browser window, then press Enter here to save the session...");
         }
 
         Path parent = session.toAbsolutePath().getParent();
@@ -227,6 +236,7 @@ public class LoginCommand implements Callable<Integer> {
           Files.createDirectories(parent);
         }
         context.storageState(new BrowserContext.StorageStateOptions().setPath(session));
+        restrictPermissions(session);
       } finally {
         // Don't close context - let the external browser process handle it
         // context.close(); // This would close the browser window
@@ -318,6 +328,14 @@ public class LoginCommand implements Callable<Integer> {
       page.waitForSelector(successSelector);
     } else {
       page.waitForLoadState(LoadState.NETWORKIDLE);
+    }
+  }
+
+  private static void restrictPermissions(Path file) {
+    try {
+      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+    } catch (UnsupportedOperationException | IOException ignored) {
+      // Non-POSIX file system (e.g. Windows): skip.
     }
   }
 }
