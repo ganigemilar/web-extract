@@ -64,12 +64,12 @@ web-extract extract --browser-executable "/path/to/chrome" --browser-type chrome
 
 **Options:**
 
-| Option | Description |
-|--------|-------------|
-| `--browser-executable PATH` | Path to browser executable (auto-detected if omitted) |
-| `--browser-type TYPE` | Browser type: `chrome`, `edge`, `brave`, `vivaldi`, `chromium`, `firefox` (default: `chrome`) |
-| `--cdp-port PORT` | CDP remote debugging port (default: `9222`) |
-| `--user-data-dir DIR` | Profile directory (persists login state, cookies, fingerprint) |
+| Option                        | Description                                                                        |
+|-------------------------------|------------------------------------------------------------------------------------|
+| `--browser-executable PATH`   | Path to browser executable (auto-detected if omitted)                              |
+| `--browser-type TYPE`         | Browser type: `chrome`, `edge`, `brave`, `vivaldi`, `chromium`, `firefox` (default: `chrome`) |
+| `--cdp-port PORT`             | CDP remote debugging port (default: `9222`)                                        |
+| `--user-data-dir DIR`         | Profile directory (persists login state, cookies, fingerprint)                     |
 
 **Auto-detection:** If `--browser-executable` is omitted, the tool searches standard install locations per OS:
 - Windows: `%LOCALAPPDATA%`, `ProgramFiles`, `ProgramFiles(x86)`
