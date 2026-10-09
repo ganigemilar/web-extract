@@ -7,6 +7,7 @@ import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.MouseButton;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.webcommon.BrowserSupport;
+import com.webcommon.extraction.ExtractionQuery;
 import com.webcommon.extraction.ExtractionResult;
 import com.webcommon.extraction.Extractor;
 import picocli.CommandLine.Command;
@@ -425,6 +426,9 @@ public class ActionCommand implements Callable<Integer> {
           throw new IllegalArgumentException("wait action requires either 'selector' or 'value' (ms)");
         }
       }
+      case "scrolluntil", "infinite-scroll" -> {
+        executeScrollUntil(page, step, result);
+      }
       case "navigate" -> {
         page.navigate(value, new Page.NavigateOptions().setWaitUntil(WaitUntilState.LOAD));
         result.setNavigated(true);
@@ -480,6 +484,131 @@ public class ActionCommand implements Callable<Integer> {
         // Navigation might not always trigger network idle
       }
     }
+  }
+
+  private void executeScrollUntil(Page page, TestStep step, StepResult result) {
+    String selector = step.getSelector();
+    Map<String, Object> options = step.getOptions();
+
+    // Configuration with defaults
+    long delayMs = getOptionAsLong(options, "delayMs", step.getDelay() > 0 ? step.getDelay() : 1000);
+    int maxScrolls = getOptionAsInt(options, "maxScrolls", 100);
+    int stopWhenSameCount = getOptionAsInt(options, "stopWhenSameCount", 3);
+    long scrollAmount = getOptionAsLong(options, "scrollAmount", 0); // 0 = viewport height
+
+    // Check if inline extraction is requested for each scroll
+    List<ExtractionQuery> extractQueries = step.getExtract();
+    boolean extractEachScroll = extractQueries != null && !extractQueries.isEmpty();
+    List<Map<String, Object>> allExtractions = new ArrayList<>();
+
+    int sameCountStreak = 0;
+    int previousCount = 0;
+    int totalScrolls = 0;
+
+    // Get initial count if selector provided
+    if (selector != null && !selector.isBlank()) {
+      previousCount = page.locator(selector).count();
+      result.setMatches(previousCount);
+    }
+
+    // Initial extraction before any scroll (if requested)
+    if (extractEachScroll) {
+      List<Map<String, Object>> initialExtract = runExtraction(page, extractQueries);
+      allExtractions.addAll(initialExtract);
+      System.err.println("Initial extraction: " + initialExtract.size() + " queries executed");
+    }
+
+    System.err.println("Starting infinite scroll: maxScrolls=" + maxScrolls + ", delayMs=" + delayMs +
+        ", stopWhenSameCount=" + stopWhenSameCount + (selector != null ? ", selector=" + selector : "")
+        + (extractEachScroll ? ", extractEachScroll=true" : ""));
+
+    for (int i = 0; i < maxScrolls; i++) {
+      // Scroll down
+      if (scrollAmount > 0) {
+        page.evaluate("window.scrollBy(0, " + scrollAmount + ")");
+      } else {
+        page.evaluate("window.scrollBy(0, window.innerHeight)");
+      }
+
+      // Wait for content to load
+      page.waitForTimeout(delayMs);
+      totalScrolls++;
+
+      // Check if we've reached bottom
+      Object atBottomResult = page.evaluate("() => window.innerHeight + window.scrollY >= document.body.scrollHeight - 10");
+      boolean atBottom = Boolean.TRUE.equals(atBottomResult);
+      if (atBottom) {
+        System.err.println("Reached bottom of page after " + totalScrolls + " scrolls");
+        break;
+      }
+
+      // Check if new content loaded (if selector provided)
+      if (selector != null && !selector.isBlank()) {
+        int currentCount = page.locator(selector).count();
+        result.setMatches(currentCount);
+
+        if (currentCount > previousCount) {
+          System.err.println("Scroll " + totalScrolls + ": found " + currentCount + " items (+" + (currentCount - previousCount) + ")");
+          previousCount = currentCount;
+          sameCountStreak = 0;
+        } else {
+          sameCountStreak++;
+          System.err.println("Scroll " + totalScrolls + ": no new items (" + sameCountStreak + "/" + stopWhenSameCount + ")");
+          if (sameCountStreak >= stopWhenSameCount) {
+            System.err.println("No new content after " + stopWhenSameCount + " scrolls, stopping");
+            break;
+          }
+        }
+      }
+
+      // Extract after each scroll (if requested)
+      if (extractEachScroll) {
+        List<Map<String, Object>> scrollExtract = runExtraction(page, extractQueries);
+        allExtractions.addAll(scrollExtract);
+        System.err.println("Scroll " + totalScrolls + " extraction: " + scrollExtract.size() + " queries executed");
+      }
+    }
+
+    // Store all extractions in step result
+    if (extractEachScroll) {
+      result.setExtract(allExtractions);
+    }
+
+    result.setSuccess(true);
+  }
+
+  private List<Map<String, Object>> runExtraction(Page page, List<ExtractionQuery> queries) {
+    List<ExtractionResult> extractionResults = Extractor.extract(page, queries);
+    List<Map<String, Object>> extractMaps = new ArrayList<>();
+    for (ExtractionResult er : extractionResults) {
+      Map<String, Object> entry = new LinkedHashMap<>();
+      entry.put("query", er.getQuery());
+      entry.put("count", er.getCount());
+      entry.put("matches", er.getMatches());
+      if (er.hasError()) {
+        entry.put("error", er.getError());
+      }
+      extractMaps.add(entry);
+    }
+    return extractMaps;
+  }
+
+  private long getOptionAsLong(Map<String, Object> options, String key, long defaultValue) {
+    if (options != null && options.containsKey(key)) {
+      Object val = options.get(key);
+      if (val instanceof Number) return ((Number) val).longValue();
+      try { return Long.parseLong(val.toString()); } catch (Exception ignored) {}
+    }
+    return defaultValue;
+  }
+
+  private int getOptionAsInt(Map<String, Object> options, String key, int defaultValue) {
+    if (options != null && options.containsKey(key)) {
+      Object val = options.get(key);
+      if (val instanceof Number) return ((Number) val).intValue();
+      try { return Integer.parseInt(val.toString()); } catch (Exception ignored) {}
+    }
+    return defaultValue;
   }
 
   private boolean shouldWaitForNavigation(String action, TestStep step) {
