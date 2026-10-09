@@ -23,7 +23,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "action",
     mixinStandardHelpOptions = true,
-    description = "Execute a sequence of browser automation steps defined in a JSON test plan."
+    description = "Execute a sequence of browser automation steps defined in a JSON test plan. Supports scrollUntil for infinite scrolling."
 )
 public class ActionCommand implements Callable<Integer> {
 
