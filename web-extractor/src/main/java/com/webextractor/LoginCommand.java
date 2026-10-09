@@ -45,9 +45,9 @@ public class LoginCommand implements Callable<Integer> {
   @Parameters(index = "0", paramLabel = "LOGIN_URL", description = "URL of the login page.")
   private String url;
 
-  @Option(names = {"-s", "--session"}, defaultValue = "session.json", paramLabel = "FILE",
-      description = "Where to save the session (default: ${DEFAULT-VALUE}).")
-  private Path session;
+  @Option(names = {"-s", "--session"}, paramLabel = "FILE",
+      description = "Where to save the session (default: UserData/session.json).")
+  private Path session = BrowserSupport.getDefaultSessionFile();
 
   @Option(names = "--user-selector", paramLabel = "SELECTOR",
       description = "Selector of the username/email field (enables automatic mode).")
@@ -194,7 +194,7 @@ public class LoginCommand implements Callable<Integer> {
     }
 
     // Determine user data directory
-    Path profileDir = userDataDir != null ? userDataDir : Path.of("browser-profile-" + extType.executableName);
+    Path profileDir = userDataDir != null ? userDataDir : BrowserSupport.getDefaultBrowserProfileDir(extType.executableName);
 
     ExternalBrowserSupport.LaunchedBrowser launched = null;
     try (Playwright playwright = Playwright.create()) {

@@ -55,9 +55,9 @@ public class ExtractCommand implements Callable<Integer> {
       description = "Save the session back to the file after extracting (keeps rotating tokens fresh).")
   private boolean updateSession;
 
-  @Option(names = {"-o", "--output"}, defaultValue = "output.json", paramLabel = "FILE",
-      description = "JSON output file (default: ${DEFAULT-VALUE}).")
-  private Path output;
+  @Option(names = {"-o", "--output"}, paramLabel = "FILE",
+      description = "JSON output file (default: UserData/output.json).")
+  private Path output = BrowserSupport.getDefaultOutputFile();
 
   @Option(names = "--html", description = "Also include the inner HTML of each match.")
   private boolean includeHtml;
@@ -235,7 +235,7 @@ public class ExtractCommand implements Callable<Integer> {
     }
 
     // Determine user data directory
-    Path profileDir = userDataDir != null ? userDataDir : Path.of("browser-profile-" + extType.executableName);
+    Path profileDir = userDataDir != null ? userDataDir : BrowserSupport.getDefaultBrowserProfileDir(extType.executableName);
 
     ExternalBrowserSupport.LaunchedBrowser launched = null;
     try (Playwright playwright = Playwright.create()) {
